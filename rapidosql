@@ -1,0 +1,173 @@
+create database rapido;
+use rapido;
+
+-- Step 1: Data Cleaning and Handling null values
+-- Check nulls and duplicates
+SELECT 
+    SUM(ride_charge IS NULL) AS null_ride_charge,
+    SUM(misc_charge IS NULL) AS null_misc_charge,
+    SUM(total_fare IS NULL) AS null_total_fare
+FROM rides;
+-- Ensuring no duplicate ride_ids
+SELECT ride_id, COUNT(*) FROM rides GROUP BY ride_id HAVING COUNT(*) > 1;
+-- Add fare per km
+ALTER TABLE rides ADD COLUMN fare_per_km DECIMAL(10,2);
+UPDATE rides
+SET fare_per_km = CASE WHEN distance > 0 THEN total_fare / distance ELSE 0 END;
+-- Add hour of ride
+ALTER TABLE rides ADD COLUMN ride_hour INT;
+UPDATE rides SET ride_hour = HOUR(ride_time);
+
+-- Add day of week
+ALTER TABLE rides ADD COLUMN ride_day VARCHAR(20);
+UPDATE rides SET ride_day = DAYNAME(ride_date);
+
+
+
+
+
+ #1. Retrieve all sucessful bookings:
+create view sucessful_bookings As
+select * from rides 
+where ride_status = 'completed';
+
+select * from sucessful_bookings;
+
+#2. Find the average ride distance for each vehicle type:
+Create view ride_distance_for_each_vehicle as
+select services, AVG(distance)
+as avg_distance From rides
+group by services;
+
+select * from ride_distance_for_each_vehicle;
+#3.Get the total number of canceled rides by customers:
+create view c as 
+select count(*) from rides
+where ride_status = 'cancelled';
+
+select * from c;
+#4. List the top 5 customer who booked the highest number of rides:
+create view top_5_Customers as
+SELECT COUNT(ride_id) as total_rides 
+FROM rides
+ORDER BY total_rides DESC LIMIT 5;
+
+select * from top_5_Customers;
+
+
+#5.Average Fare per Kilometer by Service
+SELECT 
+    services,
+    ROUND(AVG(fare_per_km),2) AS avg_fare_per_km
+FROM rides
+WHERE ride_status = 'completed'
+GROUP BY services;
+-- 5.Peak Ride Hours
+SELECT 
+    ride_hour,
+    COUNT(*) AS total_rides
+FROM rides
+WHERE ride_status = 'completed'
+GROUP BY ride_hour
+ORDER BY total_rides DESC;
+--  6.Busiest Days of the Week
+SELECT 
+    ride_day,
+    COUNT(*) AS total_rides,
+    SUM(total_fare) AS total_revenue
+FROM rides
+WHERE ride_status = 'completed'
+GROUP BY ride_day
+ORDER BY total_revenue DESC;
+-- 7.Revenue Lost Due to Cancellations
+SELECT 
+    SUM(ride_charge) AS potential_revenue,
+    (SELECT SUM(total_fare) FROM rides WHERE ride_status='completed') AS actual_revenue,
+    SUM(ride_charge) - (SELECT SUM(total_fare) FROM rides WHERE ride_status='completed') AS revenue_lost
+FROM rides
+WHERE ride_status='cancelled';
+
+-- 8.Top Payment Methods
+SELECT 
+    payment_method,
+    COUNT(*) AS total_rides,
+    SUM(total_fare) AS total_revenue
+FROM rides
+WHERE ride_status = 'completed'
+GROUP BY payment_method
+ORDER BY total_revenue DESC;
+
+-- 9.Most Common Source-Destination Routes
+SELECT 
+    source, destination,
+    COUNT(*) AS ride_count
+FROM rides
+WHERE ride_status = 'completed'
+GROUP BY source, destination
+ORDER BY ride_count DESC
+LIMIT 10;
+-- 10.Avg Ride Duration and Distance by Service
+SELECT 
+    services,
+    ROUND(AVG(duration),2) AS avg_duration_min,
+    ROUND(AVG(distance),2) AS avg_distance_km
+FROM rides
+WHERE ride_status = 'completed'
+GROUP BY services; 
+
+-- Step 6: Stored Procedures 
+-- Procedure 1 — Daily Summary
+
+DELIMITER $$
+CREATE PROCEDURE daily_summary(IN target_date DATE)
+BEGIN
+    SELECT 
+        ride_date,
+        COUNT(*) AS total_rides,
+        SUM(total_fare) AS total_revenue,
+        AVG(total_fare) AS avg_fare
+    FROM rides
+    WHERE ride_date = target_date
+      AND ride_status = 'completed'
+    GROUP BY ride_date;
+END $$
+DELIMITER ;
+
+
+-- Example call:
+CALL daily_summary('2024-07-15');
+
+
+-- Procedure 2 — Service Report
+DELIMITER $$
+CREATE PROCEDURE service_report()
+BEGIN
+    SELECT 
+        services,
+        COUNT(*) AS total_rides,
+        SUM(total_fare) AS total_revenue,
+        AVG(duration) AS avg_duration,
+        AVG(distance) AS avg_distance
+    FROM rides
+    WHERE ride_status = 'completed'
+    GROUP BY services;
+END $$
+DELIMITER ;
+-- Procedure 3 — Payment Breakdown
+DELIMITER $$
+CREATE PROCEDURE payment_breakdown()
+BEGIN
+    SELECT 
+        payment_method,
+        COUNT(*) AS rides,
+        SUM(total_fare) AS revenue
+    FROM rides
+    WHERE ride_status='completed'
+    GROUP BY payment_method;
+END $$
+DELIMITER ;
+
+CALL payment_breakdown();
+
+
+select count(*) from rides;
